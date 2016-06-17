@@ -46,6 +46,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 import org.assertj.core.api.Assertions;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.*;
+
 import org.assertj.core.util.Lists;
 import org.bson.BSON;
 import org.bson.Document;
@@ -55,12 +57,6 @@ import org.bson.types.Binary;
 import org.bson.types.MaxKey;
 import org.bson.types.MinKey;
 import org.bson.types.ObjectId;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
 import org.junit.Assume;
 import org.junit.Ignore;
 import org.junit.Rule;
@@ -3667,6 +3663,175 @@ public class FongoTest {
 
     // Then
     assertEquals(new Document("ok", 1.0).append("n",6), delete);
+    assertEquals(1, database.getCollection(collection.getName()).count());
+  }
+
+  @Test
+  public void should_update_single_document_for_each_query() {
+    fail("Not implemented");
+  }
+
+  @Test
+  public void should_update_single_document_for_each_query_V3() {
+    // Given
+    DBCollection collection = newCollection();
+    collection.insert(new BasicDBObject("_id", 1));
+    collection.insert(new BasicDBObject("_id", 2).append("key", "value1"));
+    collection.insert(new BasicDBObject("_id", 3).append("key", "value1"));
+    collection.insert(new BasicDBObject("_id", 4).append("key", "value1"));
+    collection.insert(new BasicDBObject("_id", 5).append("key", "value2"));
+    collection.insert(new BasicDBObject("_id", 6).append("key", "value2"));
+    collection.insert(new BasicDBObject("_id", 7).append("key", "value2"));
+
+
+    final BasicDBList updateQueries = new BasicDBList();
+
+    updateQueries.add(new BasicDBObject("q", new BasicDBObject("key", "value1")).append("u", new BasicDBObject("$set", new BasicDBObject("key", "updated"))));
+    updateQueries.add(new BasicDBObject("q", new BasicDBObject("key", "value2")).append("u", new BasicDBObject("$set", new BasicDBObject("key", "updated"))));
+
+    final MongoDatabase database = fongoRule.getDatabase();
+
+    // When
+    Document update = database.runCommand(new BasicDBObject("update", collection.getName()).append("updates", updateQueries));
+
+    // Then
+    assertEquals(new Document("ok", 1.0).append("n",6).append("nModified", 2), update);
+    assertEquals(2, database.getCollection(collection.getName()).count(new BasicDBObject("key", "updated")));
+  }
+
+  @Test
+  public void should_upsert_if_document_does_not_exist() {
+    fail("Not implemented");
+  }
+
+  @Test
+  public void should_upsert_if_document_does_not_exist_V3() {
+    // Given
+    DBCollection collection = newCollection();
+
+    final BasicDBList updateQueries = new BasicDBList();
+
+    updateQueries.add(new BasicDBObject("q", new BasicDBObject("key", "value1")).append("u", new BasicDBObject("$set", new BasicDBObject("key", "updated1"))).append("upsert", true));
+    updateQueries.add(new BasicDBObject("q", new BasicDBObject("key", "value2")).append("u", new BasicDBObject("$set", new BasicDBObject("key", "updated2"))).append("upsert", true));
+
+    final MongoDatabase database = fongoRule.getDatabase();
+
+    // When
+    Document update = database.runCommand(new BasicDBObject("update", collection.getName()).append("updates", updateQueries));
+
+    // Then
+    assertEquals(1.0, update.get("ok"));
+    assertEquals("Number of documents involved in upsert", updateQueries.size(), update.get("n"));
+
+    final BasicDBList upserted = (BasicDBList) update.get("upserted");
+    assertEquals("Should match number of upserted documents", updateQueries.size(), upserted.size());
+
+    for (Object o : upserted) {
+      BasicDBObject upsertedDoc = (BasicDBObject) o;
+
+      assertNotNull(upsertedDoc.get("index"));
+      assertNotNull(upsertedDoc.get(DBCollection.ID_FIELD_NAME));
+    }
+
+    assertEquals(2, database.getCollection(collection.getName()).count());
+  }
+
+  @Test
+  public void should_upsert_if_document_does_not_exist_and_update_existing() {
+    fail("Not implemented");
+  }
+
+  @Test
+  public void should_upsert_if_document_does_not_exist_and_update_existing_V3() {
+    // Given
+    DBCollection collection = newCollection();
+    collection.insert(new BasicDBObject("_id", 2).append("key", "value1"));
+
+    final BasicDBList updateQueries = new BasicDBList();
+
+    updateQueries.add(new BasicDBObject("q", new BasicDBObject("key", "value1")).append("u", new BasicDBObject("$set", new BasicDBObject("keyA", "updatedA"))).append("upsert", true));
+    updateQueries.add(new BasicDBObject("q", new BasicDBObject("key", "value2")).append("u", new BasicDBObject("$set", new BasicDBObject("key", "updated2"))).append("upsert", true));
+
+    final MongoDatabase database = fongoRule.getDatabase();
+
+    // When
+    Document update = database.runCommand(new BasicDBObject("update", collection.getName()).append("updates", updateQueries));
+
+    // Then
+    assertEquals(1.0, update.get("ok"));
+    assertEquals("Number of documents involved in operation", updateQueries.size(), update.get("n"));
+    assertEquals("Number of documents modified", 1, update.get("nModified"));
+
+    final BasicDBList upserted = (BasicDBList) update.get("upserted");
+    assertEquals("Should match number of upserted documents", 1, upserted.size());
+    assertNotNull(((BasicDBObject)upserted.get(0)).get("index"));
+    assertNotNull(((BasicDBObject)upserted.get(0)).get(DBCollection.ID_FIELD_NAME));
+
+    assertEquals(2, database.getCollection(collection.getName()).count());
+  }
+
+  @Test
+  public void should_update_all_documents_for_each_query() {
+    fail("Not implemented");
+  }
+
+  @Test
+  public void should_update_all_documents_for_each_query_V3() {
+    // Given
+    DBCollection collection = newCollection();
+    collection.insert(new BasicDBObject("_id", 1));
+    collection.insert(new BasicDBObject("_id", 2).append("key", "value1"));
+    collection.insert(new BasicDBObject("_id", 3).append("key", "value1"));
+    collection.insert(new BasicDBObject("_id", 4).append("key", "value1"));
+    collection.insert(new BasicDBObject("_id", 5).append("key", "value2"));
+    collection.insert(new BasicDBObject("_id", 6).append("key", "value2"));
+    collection.insert(new BasicDBObject("_id", 7).append("key", "value2"));
+
+
+    final BasicDBList updateQueries = new BasicDBList();
+
+    updateQueries.add(new BasicDBObject("q", new BasicDBObject("key", "value1")).append("u", new BasicDBObject("$set", new BasicDBObject("key", "updated"))).append("multi", true));
+    updateQueries.add(new BasicDBObject("q", new BasicDBObject("key", "value2")).append("u", new BasicDBObject("$set", new BasicDBObject("key", "updated"))).append("multi", true));
+
+    final MongoDatabase database = fongoRule.getDatabase();
+
+    // When
+    Document update = database.runCommand(new BasicDBObject("update", collection.getName()).append("updates", updateQueries));
+
+    // Then
+    assertEquals(new Document("ok", 1.0).append("n",6).append("nModified", 6), update);
+    assertEquals(6, database.getCollection(collection.getName()).count(new BasicDBObject("key", "updated")));
+  }
+
+  @Test
+  public void should_insert_single_document_when_upsert_and_multi_true_no_document_exists() {
+    fail("Not implemented");
+  }
+
+  @Test
+  public void should_insert_single_document_when_upsert_and_multi_true_no_document_exists_V3() {
+    // Given
+    DBCollection collection = newCollection();
+
+    final BasicDBList updateQueries = new BasicDBList();
+
+    updateQueries.add(new BasicDBObject("q", new BasicDBObject("key", "value1")).append("u", new BasicDBObject("$set", new BasicDBObject("key", "updated"))).append("multi", true).append("upsert", true));
+
+    final MongoDatabase database = fongoRule.getDatabase();
+
+    // When
+    Document update = database.runCommand(new BasicDBObject("update", collection.getName()).append("updates", updateQueries));
+
+    // Then
+    assertEquals(1.0, update.get("ok"));
+    assertEquals("Number of documents involved in operation", updateQueries.size(), update.get("n"));
+    assertEquals("Number of documents modified", 0, update.get("nModified"));
+
+    final BasicDBList upserted = (BasicDBList) update.get("upserted");
+    assertEquals("Should match number of upserted documents", 1, upserted.size());
+    assertNotNull(((BasicDBObject)upserted.get(0)).get("index"));
+    assertNotNull(((BasicDBObject)upserted.get(0)).get(DBCollection.ID_FIELD_NAME));
+
     assertEquals(1, database.getCollection(collection.getName()).count());
   }
 

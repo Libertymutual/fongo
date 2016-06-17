@@ -1,28 +1,14 @@
 package com.github.fakemongo;
 
-import com.mongodb.AggregationOutput;
-import com.mongodb.BasicDBObject;
-import com.mongodb.BulkUpdateRequestBuilder;
-import com.mongodb.BulkWriteOperation;
-import com.mongodb.BulkWriteRequestBuilder;
-import com.mongodb.DB;
-import com.mongodb.DBCollection;
-import com.mongodb.DBCursor;
-import com.mongodb.DBObject;
-import com.mongodb.FongoDB;
-import com.mongodb.FongoDBCollection;
+import com.mongodb.*;
+
 import static com.mongodb.FongoDBCollection.bsonDocument;
 import static com.mongodb.FongoDBCollection.bsonDocuments;
 import static com.mongodb.FongoDBCollection.dbObject;
 import static com.mongodb.FongoDBCollection.dbObjects;
 import static com.mongodb.FongoDBCollection.decode;
 import static com.mongodb.FongoDBCollection.decoderContext;
-import com.mongodb.MongoClient;
-import com.mongodb.MongoNamespace;
-import com.mongodb.WriteConcern;
-import com.mongodb.WriteConcernException;
-import com.mongodb.WriteConcernResult;
-import com.mongodb.WriteResult;
+
 import com.mongodb.bulk.BulkWriteError;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.bulk.BulkWriteUpsert;
@@ -45,13 +31,14 @@ import com.mongodb.internal.validator.CollectibleDocumentFieldNameValidator;
 import com.mongodb.internal.validator.UpdateFieldNameValidator;
 import com.mongodb.operation.FongoBsonArrayWrapper;
 import com.mongodb.util.JSON;
-import java.util.ArrayList;
-import java.util.Iterator;
+
+import java.util.*;
+
 import static java.util.Arrays.asList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+
 import java.util.concurrent.TimeUnit;
+import java.util.jar.Pack200;
+
 import org.bson.BsonArray;
 import org.bson.BsonBoolean;
 import org.bson.BsonDocument;
@@ -65,6 +52,7 @@ import org.bson.Document;
 import org.bson.FieldNameValidator;
 import org.bson.codecs.Codec;
 import org.bson.codecs.Decoder;
+import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -506,6 +494,66 @@ public class FongoConnection implements Connection {
         }
       }
       return (T) new Document("ok", 1.0).append("n", numDocsDeleted);
+    } else if (command.containsKey("update")) {
+      final FongoDBCollection dbCollection = (FongoDBCollection) db.getCollection(command.get("update").asString().getValue());
+
+      List<BsonValue> documentsToUpdate = command.getArray("updates").getValues();
+
+      int documentsUpdated = 0;
+      int documentsFound = 0;
+      boolean upsertHappened = false;
+      final BasicDBList upsertedDocuments = new BasicDBList();
+
+      final ListIterator<BsonValue> documentIterator = documentsToUpdate.listIterator();
+      while(documentIterator.hasNext()) {
+        final BsonDocument updateDocument = documentIterator.next().asDocument();
+
+        final DBObject query = dbObject(updateDocument.get("q").asDocument());
+        final DBObject update = dbObject(updateDocument.get("u").asDocument());
+
+        boolean upsert = false;
+
+        if ( updateDocument.containsKey("upsert") ) {
+          upsert = updateDocument.getBoolean("upsert").getValue();
+        }
+
+        boolean multi = false;
+        if ( updateDocument.containsKey("multi") ) {
+          multi = updateDocument.getBoolean("multi").getValue();
+        }
+
+        long potentiallyImpactedDocuments = dbCollection.count(query);
+
+        final WriteResult result = dbCollection.update(query, update, upsert, multi);
+
+        if ( upsert && result.getUpsertedId() != null) {
+          documentsFound += result.getN();
+          upsertHappened = true;
+
+          //TODO fix _id to be Object("idhere") instead of just "idhere"
+          upsertedDocuments.add(new BasicDBObject("index", documentIterator.previousIndex()).append(DBCollection.ID_FIELD_NAME, result.getUpsertedId()));
+        } else if ( upsert && result.getUpsertedId() == null) {
+          documentsFound += result.getN();
+        } else {
+          documentsFound += potentiallyImpactedDocuments;
+        }
+
+        if ( result.isUpdateOfExisting() ) {
+          documentsUpdated += result.getN();
+        }
+      }
+
+      final Document result = new Document("ok", 1.0).append("n", documentsFound);
+
+      if ( documentsUpdated > 0 || upsertHappened) {
+        result.append("nModified", documentsUpdated);
+      }
+
+      if ( upsertHappened ) {
+        result.append("upserted", upsertedDocuments);
+      }
+
+      return (T) result;
     } else {
       LOG.warn("Command not implemented: {}", command);
       throw new FongoException("Not implemented for command : " + JSON.serialize(dbObject(command)));
